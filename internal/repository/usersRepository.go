@@ -94,9 +94,9 @@ func (u *usersRepository) InsertUser(ctx context.Context, user *domain.User) (*d
 		return nil, fmt.Errorf("email already in use")
 	}
 
-	query := `INSERT INTO users (id, email, first_name, last_name, created_at, updated_at) 
-			  VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`
-	err = u.db.QueryRowContext(ctx, query, user.ID, user.Email, user.FirstName, user.LastName, user.CreatedAt, user.UpdatedAt).Scan(&user.ID)
+	query := `INSERT INTO users (email, first_name, last_name, created_at, updated_at) 
+			  VALUES ($1, $2, $3, $4, $5) RETURNING id`
+	err = u.db.QueryRowContext(ctx, query, user.Email, user.FirstName, user.LastName, user.CreatedAt, user.UpdatedAt).Scan(&user.ID)
 	if err != nil {
 		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
 			return nil, fmt.Errorf("email already in use")

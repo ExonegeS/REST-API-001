@@ -1,17 +1,23 @@
-# Use a minimal base image for Go binaries
 FROM golang:1.23-alpine AS builder
 
-# Set the working directory inside the container
 WORKDIR /app
 
-# Copy the pre-built binary from the local `bin/` directory to the container
-COPY bin/app /app/app
+COPY . .
 
-# Set the port that the service listens on
+RUN go mod tidy
+RUN go build -o /app/app cmd/main.go
+
+FROM alpine:latest
+
+RUN apk add --no-cache bash curl
+
+WORKDIR /app
+
+COPY --from=builder /app/app /app/app
+
 EXPOSE 8888
 
-# Set permissions to make the binary executable
 RUN chmod +x /app/app
 
-# Set the command to run the service
+# Set the command to wait for PostgreSQL to be ready and then start the backend app
 CMD ["./app"]

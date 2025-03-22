@@ -10,6 +10,8 @@ services:
       - ./.env.production
     depends_on:
       - db
+    volumes:
+      - ./.env.production:/app/.env
 
   db:
     image: postgres:13
@@ -20,7 +22,6 @@ services:
       - ./.env.production
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
 
 volumes:
   postgres_data:
