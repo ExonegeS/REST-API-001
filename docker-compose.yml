@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+    ports:
+      - "4004:8888"
+    env_file:
+      - ./.env.production
+    depends_on:
+      - db
+    volumes:
+      - ./.env.production:/app/.env
+
+  db:
+    image: postgres:13
+    restart: always
+    ports:
+      - "5444:5432"
+    env_file:
+      - ./.env.production
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+
+networks:
+  default:
+    driver: bridge
