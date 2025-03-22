@@ -4,11 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log/slog"
 	"strconv"
 	"strings"
 
 	"github.com/ExonegeS/REST-API-001/internal/domain"
+	"github.com/lib/pq"
 )
 
 type UsersRepository interface {
@@ -54,13 +54,10 @@ func (u *usersRepository) GetUsersList(ctx context.Context, input domain.GetUser
 }
 
 func (u *usersRepository) GetUsersOne(ctx context.Context, input domain.GetUserInput) (*domain.User, error) {
-	// Start building the base SQL query
 	query := "SELECT id, email, first_name, last_name, created_at, updated_at FROM users"
 
-	// To hold query parameters (values)
 	var args []interface{}
 
-	// Build WHERE clauses based on non-nil fields in the input
 	conditions := []string{}
 
 	if input.ID != nil {
@@ -68,47 +65,74 @@ func (u *usersRepository) GetUsersOne(ctx context.Context, input domain.GetUserI
 		args = append(args, *input.ID)
 	}
 
-	// If any conditions are added, append them to the query
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
 
-	// Log the final query and args
-	slog.Info("Running query", "query", query, "args", args)
-
-	// Execute the query
 	row := u.db.QueryRowContext(ctx, query, args...)
 
 	var user domain.User
 	if err := row.Scan(&user.ID, &user.Email, &user.FirstName, &user.LastName, &user.CreatedAt, &user.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
-			// No user found, log the ID and return nil
-			slog.Info("No user found with ID", "id", *input.ID)
-			return nil, nil
+			return nil, fmt.Errorf("user not found")
 		}
 		return nil, fmt.Errorf("error occurred while scanning row in 'users': %s", err)
 	}
 
-	// Return the user if found
 	return &user, nil
 }
 
 func (u *usersRepository) InsertUser(ctx context.Context, user *domain.User) (*domain.User, error) {
-	query := `
-        INSERT INTO users (email, first_name, last_name, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, email, first_name, last_name, created_at, updated_at
-    `
+	var existingUser domain.User
+	err := u.db.QueryRowContext(ctx, "SELECT id, email, first_name, last_name, created_at, updated_at FROM users WHERE email = $1", user.Email).Scan(
+		&existingUser.ID, &existingUser.Email, &existingUser.FirstName, &existingUser.LastName, &existingUser.CreatedAt, &existingUser.UpdatedAt,
+	)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, fmt.Errorf("error checking for existing email: %v", err)
+	}
+	if err == nil {
+		return nil, fmt.Errorf("email already in use")
+	}
 
-	err := u.db.QueryRowContext(ctx, query, user.Email, user.FirstName, user.LastName, user.CreatedAt, user.UpdatedAt).
-		Scan(&user.ID, &user.Email, &user.FirstName, &user.LastName, &user.CreatedAt, &user.UpdatedAt)
+	query := `INSERT INTO users (id, email, first_name, last_name, created_at, updated_at) 
+			  VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`
+	err = u.db.QueryRowContext(ctx, query, user.ID, user.Email, user.FirstName, user.LastName, user.CreatedAt, user.UpdatedAt).Scan(&user.ID)
 	if err != nil {
-		return nil, fmt.Errorf("error occurred while inserting new user: %w", err)
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
+			return nil, fmt.Errorf("email already in use")
+		}
+		return nil, fmt.Errorf("error creating user: %v", err)
 	}
 
 	return user, nil
 }
 
 func (u *usersRepository) UpdateUser(ctx context.Context, user *domain.User) (*domain.User, error) {
+	var existingUser domain.User
+	err := u.db.QueryRowContext(ctx, "SELECT id, email, first_name, last_name, created_at, updated_at FROM users WHERE id = $1", user.ID).Scan(
+		&existingUser.ID, &existingUser.Email, &existingUser.FirstName, &existingUser.LastName, &existingUser.CreatedAt, &existingUser.UpdatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("user with id %s not found", user.ID)
+		}
+		return nil, fmt.Errorf("error checking for existing user: %v", err)
+	}
+
+	query := `UPDATE users
+			  SET email = $1, first_name = $2, last_name = $3, updated_at = $4
+			  WHERE id = $5
+			  RETURNING id, email, first_name, last_name, created_at, updated_at`
+
+	err = u.db.QueryRowContext(ctx, query, user.Email, user.FirstName, user.LastName, user.UpdatedAt, user.ID).Scan(
+		&user.ID, &user.Email, &user.FirstName, &user.LastName, &user.CreatedAt, &user.UpdatedAt,
+	)
+	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
+			return nil, fmt.Errorf("the email address is already in use. Please use a different email.")
+		}
+		return nil, fmt.Errorf("error updating user: %v", err)
+	}
+
 	return user, nil
 }

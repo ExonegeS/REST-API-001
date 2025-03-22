@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"net/http"
@@ -32,6 +33,8 @@ func (s *ApiServer) Start(listenAddr int) error {
 	}
 	router.HandleFunc("/users", s.getUsersHandler).Methods("GET")
 	router.HandleFunc("/users/{id}", s.getUserHandler).Methods("GET")
+	router.HandleFunc("/users", s.createUserHandler).Methods("POST")
+	router.HandleFunc("/users/{id}", s.updateUserHandler).Methods("PUT")
 
 	slog.Info(fmt.Sprintf("SERVER STARTED AT ADDRESS %v", listenAddr))
 	return s.srv.ListenAndServe()
@@ -90,9 +93,58 @@ func (s *ApiServer) getUserHandler(w http.ResponseWriter, r *http.Request) {
 		ID: &id,
 	})
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": fmt.Sprintf("User with ID %s not found", id)})
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": err.Error()})
 		return
 	}
 
 	writeJSON(w, http.StatusOK, user)
+}
+
+func (s *ApiServer) createUserHandler(w http.ResponseWriter, r *http.Request) {
+	var input domain.CreateUserInput
+
+	if r.Body == nil || r.ContentLength == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Request body is required"})
+		return
+	}
+
+	err := json.NewDecoder(r.Body).Decode(&input)
+	if err != nil {
+		if err == io.EOF {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Empty JSON body"})
+		} else {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Invalid JSON body"})
+		}
+		slog.Error(err.Error(), "input", input)
+		return
+	}
+
+	response, err := s.svc.CreateUser(context.Background(), input)
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *ApiServer) updateUserHandler(w http.ResponseWriter, r *http.Request) {
+	var input domain.UpdateUserInput
+
+	err := json.NewDecoder(r.Body).Decode(&input)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Invalid JSON body"})
+		return
+	}
+
+	userID := mux.Vars(r)["id"]
+	input.ID = userID
+
+	updatedUser, err := s.svc.UpdateUser(context.Background(), input)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, updatedUser)
 }

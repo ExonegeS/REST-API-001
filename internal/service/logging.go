@@ -53,3 +53,37 @@ func (s *LoggingService) GetUsersOne(ctx context.Context, input domain.GetUserIn
 	}()
 	return s.next.GetUsersOne(ctx, input)
 }
+
+func (s *LoggingService) CreateUser(ctx context.Context, input domain.CreateUserInput) (response *domain.GetUserResponse, err error) {
+	start := time.Now()
+	defer func() {
+		logger := s.logger
+		if response != nil {
+			logger = s.logger.With(slog.Any("user", response.User))
+		} else {
+			logger = s.logger.With(slog.Any("err", err))
+		}
+		logger.Info(
+			"CreateUsers",
+			"took", time.Since(start).String(),
+		)
+	}()
+	return s.next.CreateUser(ctx, input)
+}
+
+func (s *LoggingService) UpdateUser(ctx context.Context, input domain.UpdateUserInput) (response *domain.GetUserResponse, err error) {
+	start := time.Now()
+	defer func() {
+		logger := s.logger
+		if response != nil {
+			logger = s.logger.With(slog.Any("user", response.User))
+		} else {
+			logger = s.logger.With(slog.Any("err", err))
+		}
+		logger.Info(
+			"Update",
+			"took", time.Since(start).String(),
+		)
+	}()
+	return s.next.UpdateUser(ctx, input)
+}
